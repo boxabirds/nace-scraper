@@ -28,7 +28,7 @@ func TestParseNACECodes(t *testing.T) {
 	}
 
 	naceCode := NACECode{}
-	naceCode.Categories = parseCategories(doc, 1)
+	naceCode.Categories = parseCategories(doc, 1, "http://example.com")
 
 	if len(naceCode.Categories) != 1 {
 		t.Fatalf("Expected 1 main category, got %d", len(naceCode.Categories))

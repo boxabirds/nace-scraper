@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -58,12 +59,12 @@ func fetchAndParseNACECodes(url string) (NACECode, error) {
 		return NACECode{}, fmt.Errorf("could not find div with class 'nacelist'")
 	}
 
-	naceCode.Categories = parseCategories(nacelistDiv, 1)
+	naceCode.Categories = parseCategories(nacelistDiv, 1, url)
 
 	return naceCode, nil
 }
 
-func parseCategories(n *html.Node, level int) []Category {
+func parseCategories(n *html.Node, level int, baseURL string) []Category {
 	var categories []Category
 
 	var traverse func(*html.Node)
@@ -71,7 +72,7 @@ func parseCategories(n *html.Node, level int) []Category {
 		if node.Type == html.ElementNode && node.Data == "ul" && hasClass(node, fmt.Sprintf("level%d", level)) {
 			for li := node.FirstChild; li != nil; li = li.NextSibling {
 				if li.Type == html.ElementNode && li.Data == "li" && hasClass(li, fmt.Sprintf("level%d", level)) {
-					category := parseCategory(li, level)
+					category := parseCategory(li, level, baseURL)
 					categories = append(categories, category)
 				}
 			}
@@ -86,24 +87,38 @@ func parseCategories(n *html.Node, level int) []Category {
 	return categories
 }
 
-func parseCategory(li *html.Node, level int) Category {
+func resolveURL(base, relative string) string {
+	baseURL, err := url.Parse(base)
+	if err != nil {
+		fmt.Printf("### Failed to parse base URL: %v", err)
+		return relative // Return the original relative URL if parsing fails
+	}
+	relativeURL, err := url.Parse(relative)
+	if err != nil {
+		fmt.Printf("### Failed to parse relative URL: %v", err)
+		return relative // Return the original relative URL if parsing fails
+	}
+	return baseURL.ResolveReference(relativeURL).String()
+}
+
+func parseCategory(li *html.Node, level int, baseURL string) Category {
 	category := Category{Level: level}
 
 	for node := li.FirstChild; node != nil; node = node.NextSibling {
 		if node.Type == html.ElementNode && node.Data == "a" {
-			category.Href = getAttr(node, "href")
+			relativeHref := getAttr(node, "href")
+			category.Href = resolveURL(baseURL, relativeHref)
 			category.Title = getAttr(node, "title")
 			if node.FirstChild != nil {
 				category.Code, category.Description = parseCodeAndDescription(node.FirstChild.Data)
 			}
 		} else if node.Type == html.ElementNode && node.Data == "ul" && hasClass(node, fmt.Sprintf("level%d", level+1)) {
-			category.SubCategories = parseCategories(node, level+1)
+			category.SubCategories = parseCategories(node, level+1, baseURL)
 		}
 	}
 
 	return category
 }
-
 func hasClass(n *html.Node, class string) bool {
 	for _, attr := range n.Attr {
 		if attr.Key == "class" {
